@@ -1,0 +1,86 @@
+name: Publish Image to ECR
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  UPSTREAM_IMAGE: itzg/minecraft-server:java25
+  AWS_REGION: us-east-1
+
+jobs:
+  publish:
+    name: Build, Smoke test and push Image
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credemtials
+        uses: aws-actions/congfigure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+        
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Pull upstream Image
+        run: docker pull ${{ env.UPSTREAM_IMAGE }}
+
+      - name: Smoke test
+        run: |
+        set -e
+        echo "Starting smoke test container..."
+        docker run -d --name mc-smoke-test -e EULA=TRUE -e MEMORY=1G -p 25565:25565 ${{ env.UPSTREAM_IMAGE }}
+
+        echo "Looking for 'Done'"
+        SUCCESS=0
+        for i in $(seq 1 24); do
+          sleep 5
+          if docker logs mc-smoke-test 2>&1 | grep -q "Done ("; then
+            echo "Server repoerted Done"
+            SUCCESS=1
+            break
+          fi
+        done
+
+        echo "----- Last 30 log lines -----"
+        docker logs --tail 30 mc-smoke-test
+        echo "-----------------------------"
+
+        docker stop mc-smoke-test || true
+        docker rm mc-smoke-test || true
+
+        if [ "$SUCCESS" -ne 1 ]; then
+          echo "::error::Smoke test failed - server did not report Done within 2 minutes."
+          exit 1
+        fi
+        echo "Smoke test passed."
+      
+      - name: Tag and push Image
+        env:
+          ECR_URL: ${{ secrets.ECR_REPO_URL }}
+          GIT_TAG: ${{ github.ref_name }}
+        run: |
+          docker tag ${{ env.UPSTREAM_IMAGE }} "$ECR_URL:$GIT_TAG"
+          docker tag ${{ env.UPSTREAM_IMAGE }} "$ECR_URL:latest"
+          docker push "$ECR_URL:$GIT_TAG"
+          docker push "$ECR_URL:latest"
+          echo "Pushed: $ECR_URL:$GIT_TAG"
+          echo "Pushed: $ECR_URL:latest"
+      
+      - name: Workflow summary
+        run: |
+          echo "## Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository:** \`${{ secrets.ECR_REPOSITORY_URL }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Smoke test:** passed" >> $GITHUB_STEP_SUMMARY

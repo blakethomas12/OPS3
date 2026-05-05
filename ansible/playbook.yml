@@ -1,0 +1,111 @@
+- name: Configure Minecraft server
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    minecraft_motd: "thomblak-934499222"
+
+    minecraft_container_name: minecraft
+    minecraft_port: 25565
+    minecraft_data_dir: /data
+
+    minecraft_mem: "1500M"
+
+    minecraft_restart_policy: unless-stopped
+
+    minecraft_restore_from_bucket: true
+    minecraft_bucket_world_prefix: "world"
+
+  pre_tasks:
+    - name: Wait for host to be reachable
+      ansible.builtin.wait_for_connection:
+        timeout: 60
+
+    - name: Confirm vars from terraform
+      ansible.builtin.assert:
+        that:
+          - backup_bucket is defined
+          - ecr_repo_url is defined
+          - image_tag is defined
+          - aws_region is defined
+        fail_msg: "Missing terraform variables"
+
+  tasks:
+    - name: Install basepackages
+      ansible.builtin.dnf:
+        name:
+          - docker
+          - unzip
+        state: present
+
+    - name: Install aws cli
+      ansible.builtin.shell: |
+        cd /tmp
+        curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+        unzip -q -o awscliv2.zip
+        ./aws/install --update
+      args:
+        creates: /usr/local/bin/aws
+
+    - name: Ensure docker is running on boot
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add ec2-user to docker group
+      ansible.builtin.user:
+        name: "{{ ansible_user | default('ec2-user') }}"
+        groups: docker
+        append: true
+
+    - name: Log docker into ecr
+      ansible.builtin.shell: |
+        aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 211125686014.dkr.ecr.us-east-1.amazonaws.com
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Ensure data folder exists
+      ansible.builtin.file:
+        path: "{{ minecraft_data_dir }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+
+    - name: Check if a backup exists
+      ansible.builtin.command: >
+        aws s3 ls s3://{{ backup_bucket }}/{{ minecraft_bucket_world_prefix }}/
+        --region {{ aws_region }}
+      register: s3_check
+      changed_when: false
+      failed_when: false
+
+    - name: Restore world from backup_buck
+      ansible.builtin.command: >
+        aws s3 sync
+        s3://{{ backup_bucket }}/{{ minecraft_bucket_world_prefix }}/
+        {{ minecraft_data_dir }}/
+        --region {{ aws_region }}
+
+    - name: Pull image from ecr
+      ansible.builtin.command: >
+        docker pull {{ ecr_repo_url }}:{{ image_tag }}
+      register: docker_pull
+      changed_when: "'Downloaded newer image' in docker_pull.stdout or 'Pull complete' in docker_pull.stdout"
+
+    - name: Run server
+      ansible.builtin.command: >
+        docker run -d
+        --name {{ minecraft_container_name }}
+        --restart {{ minecraft_restart_policy }}
+        -p {{ minecraft_port }}:25565
+        -v {{ minecraft_data_dir }}:/data
+        -e EULA=TRUE
+        -e MEMORY={{ minecraft_mem }}
+        -e MOTD={{ minecraft_motd }}
+        -e TYPE=VANILLA
+        {{ ecr_repo_url }}:{{ image_tag }}

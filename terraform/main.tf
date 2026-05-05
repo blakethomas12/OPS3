@@ -92,30 +92,24 @@ resource "aws_instance" "minecraft" {
   }
 }
 
-# resource "null_resource" "ansible_provision" {
-#   triggers = {
-#     instance_id = aws_instance.minecraft.id
-#   }
+resource "null_resource" "ansible_provision" {
+  triggers = {
+    instance_id = aws_instance.minecraft.id
+  }
 
-#   provisioner "local-exec" {
-#     command = <<-EOT
-#         echo "Waiting for SSH on ${aws_instance.minecraft.public_ip}..."
-#         for i in $(seq 1 30); do
-#             nc -z ${aws_instance.minecraft.public_ip} 22 && break
-#             sleep 5
-#         done
-#         sleep 10
+  provisioner "local-exec" {
+    interpreter = [ "/bin/bash", "-c" ]
+    command = <<-EOT
+        echo "Waiting for SSH on ${aws_instance.minecraft.public_ip}..."
+        for i in $(seq 1 30); do
+            nc -z ${aws_instance.minecraft.public_ip} 22 && break
+            sleep 5
+        done
+        sleep 10
 
-#         ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
-#         -i '${aws_instance.minecraft.public_ip},'\
-#         -u ${var.ssh_user} \
-#         --private-key ${var.private_key_path} \
-#          --extra-vars "s3_backup_bucket=${var.backup_bucket}" \
-#         --extra-vars "ecr_repository_url=${var.ecr_repo_url}" \
-#         --extra-vars "minecraft_image_tag=${var.image_tag}" \
-#         --extra-vars "aws_region=${var.aws_region}" \
-#         ${var.ansible_playbook_path}
-#     EOT
-#   }
-#   depends_on = [aws_instance.minecraft]
-# }
+        export ANSIBLE_HOST_KEY_CHECKING=False 
+        ansible-playbook -i '${aws_instance.minecraft.public_ip},' -u ${var.ssh_user} --private-key ${var.private_key_path} --extra-vars "backup_bucket=${var.backup_bucket}" --extra-vars "ecr_repo_url=${var.ecr_repo_url}" --extra-vars "image_tag=${var.image_tag}" --extra-vars "aws_region=${var.aws_region}" ${var.ansible_playbook_path}
+    EOT
+  }
+  depends_on = [aws_instance.minecraft]
+}
