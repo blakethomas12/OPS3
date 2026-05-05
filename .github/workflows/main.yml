@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Configure AWS credemtials
-        uses: aws-actions/congfigure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -47,7 +47,7 @@ jobs:
           for i in $(seq 1 24); do
             sleep 5
             if docker logs mc-smoke-test 2>&1 | grep -q "Done ("; then
-              echo "Server repoerted Done"
+              echo "Server reported Done"
               SUCCESS=1
               break
             fi
@@ -82,5 +82,5 @@ jobs:
         run: |
           echo "## Image Published :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "- **Tag:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Repository:** \`${{ secrets.ECR_REPOSITORY_URL }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository:** \`${{ secrets.ECR_REPO_URL }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Smoke test:** passed" >> $GITHUB_STEP_SUMMARY
