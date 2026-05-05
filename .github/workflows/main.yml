@@ -38,33 +38,33 @@ jobs:
 
       - name: Smoke test
         run: |
-        set -e
-        echo "Starting smoke test container..."
-        docker run -d --name mc-smoke-test -e EULA=TRUE -e MEMORY=1G -p 25565:25565 ${{ env.UPSTREAM_IMAGE }}
+          set -e
+          echo "Starting smoke test container..."
+          docker run -d --name mc-smoke-test -e EULA=TRUE -e MEMORY=1G -p 25565:25565 ${{ env.UPSTREAM_IMAGE }}
 
-        echo "Looking for 'Done'"
-        SUCCESS=0
-        for i in $(seq 1 24); do
-          sleep 5
-          if docker logs mc-smoke-test 2>&1 | grep -q "Done ("; then
-            echo "Server repoerted Done"
-            SUCCESS=1
-            break
+          echo "Looking for 'Done'"
+          SUCCESS=0
+          for i in $(seq 1 24); do
+            sleep 5
+            if docker logs mc-smoke-test 2>&1 | grep -q "Done ("; then
+              echo "Server repoerted Done"
+              SUCCESS=1
+              break
+            fi
+          done
+
+          echo "----- Last 30 log lines -----"
+          docker logs --tail 30 mc-smoke-test
+          echo "-----------------------------"
+
+          docker stop mc-smoke-test || true
+          docker rm mc-smoke-test || true
+
+          if [ "$SUCCESS" -ne 1 ]; then
+            echo "::error::Smoke test failed - server did not report Done within 2 minutes."
+            exit 1
           fi
-        done
-
-        echo "----- Last 30 log lines -----"
-        docker logs --tail 30 mc-smoke-test
-        echo "-----------------------------"
-
-        docker stop mc-smoke-test || true
-        docker rm mc-smoke-test || true
-
-        if [ "$SUCCESS" -ne 1 ]; then
-          echo "::error::Smoke test failed - server did not report Done within 2 minutes."
-          exit 1
-        fi
-        echo "Smoke test passed."
+          echo "Smoke test passed."
       
       - name: Tag and push Image
         env:
