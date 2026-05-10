@@ -91,6 +91,13 @@
         {{ minecraft_data_dir }}/
         --region {{ aws_region }}
 
+    - name: Fix ownership of /data after restore
+      ansible.builtin.file:
+        path: "{{ minecraft_data_dir }}"
+        owner: "1000"
+        group: "1000"
+        recurse: true
+
     - name: Pull image from ecr
       ansible.builtin.command: >
         docker pull {{ ecr_repo_url }}:{{ image_tag }}
